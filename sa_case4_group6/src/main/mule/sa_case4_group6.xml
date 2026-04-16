@@ -23,7 +23,7 @@ http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/cu
 	<flow name="sa_case4_group6Flow" doc:id="529fec17-5b07-4d7c-bfb3-74b2a30fa905">
 		<scheduler doc:name="Scheduler (Trigger periodisch)" doc:id="31c226f5-db06-4eab-ab1a-116721dd3d5d">
 			<scheduling-strategy>
-				<fixed-frequency/>
+				<fixed-frequency frequency="5000"/>
 			</scheduling-strategy>
 		</scheduler>
 		<wsc:consume doc:name="Web Service Consumer" doc:id="346e3c4b-b74c-404f-afe3-e9c56601feb5" config-ref="Web_Service_Consumer_Config" operation="getNewJobs">
