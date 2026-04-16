@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:jms="http://www.mulesoft.org/schema/mule/jms"
+	xmlns:wsc="http://www.mulesoft.org/schema/mule/wsc" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/wsc http://www.mulesoft.org/schema/mule/wsc/current/mule-wsc.xsd
+http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd">
+	<wsc:config name="Web_Service_Consumer_Config" doc:name="Web Service Consumer Config" doc:id="a789a184-c2a0-449e-a648-a90f9cdefba0" >
+		<wsc:connection wsdlLocation="http://192.168.111.9:9090/service/cc?WSDL" service="CallCenterPortImplService" port="CallCenterPortImplPort" address="http://192.168.111.9:9090/service/cc" >
+			<wsc:web-service-security actor="http://schemas.xmlsoap.org/soap/actor/next" />
+		</wsc:connection>
+	</wsc:config>
+	<jms:config name="JMS_Config" doc:name="JMS Config" doc:id="07c896cc-8c0c-43d6-ae67-a397a3e74f3e" >
+		<jms:active-mq-connection username="group6" password="oi374bU0njDlI6m" >
+			<jms:caching-strategy >
+				<jms:no-caching />
+			</jms:caching-strategy>
+			<jms:factory-configuration brokerUrl="tcp://192.168.111.6:61616" />
+		</jms:active-mq-connection>
+	</jms:config>
+	<flow name="sa_case4_group6Flow" doc:id="529fec17-5b07-4d7c-bfb3-74b2a30fa905">
+		<scheduler doc:name="Scheduler (Trigger periodisch)" doc:id="31c226f5-db06-4eab-ab1a-116721dd3d5d">
+			<scheduling-strategy>
+				<fixed-frequency/>
+			</scheduling-strategy>
+		</scheduler>
+		<wsc:consume doc:name="Web Service Consumer" doc:id="346e3c4b-b74c-404f-afe3-e9c56601feb5" config-ref="Web_Service_Consumer_Config" operation="getNewJobs">
+			<wsc:message >
+				<wsc:body ><![CDATA[#[null]]]></wsc:body>
+			</wsc:message>
+		</wsc:consume>
+		<foreach doc:name="For Each" doc:id="ab11db27-1218-450a-9bd9-b8fad232a4c9" collection="#[payload.body.getNewJobsResponse.return]">
+			<logger level="INFO" doc:name="Job Logger" doc:id="b7722742-f787-4736-b938-5e3414117ab0" />
+			<ee:transform doc:name="Transform Message" doc:id="7c3172ee-31f8-4f37-800e-68a694aeb78f">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+{
+    jobId: payload.job.jobnumber,
+    customerNr: payload.job.customernumber,
+    description: payload.job.description,
+    region: payload.job.region,
+    scheduledDateTime: payload.job.scheduledDateTime,
+    jobType: payload.job['type'],
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+			<logger level="INFO" doc:name="Logger" doc:id="31e2118d-6515-4483-b1f8-afe2f643b392" category="#[payload]"/>
+			<choice doc:name="Choice by type" doc:id="965f83c4-7997-43f7-a1b0-db8c86e67629">
+			<when expression="payload.jobType == 'Maintanence'">
+				<jms:publish doc:name="Publish Routine Order"
+             doc:id="f71963fc-0d70-40a6-832e-b9bc3fe13112"
+             config-ref="JMS_Config"
+             destination="group6.dispo.jobs.new"
+             destinationType="TOPIC"
+             persistentDelivery="false">
+    <jms:message>
+        <jms:body><![CDATA[#[%dw 2.0
+output application/json
+---
+payload]]]></jms:body>
+        <jms:properties><![CDATA[#[%dw 2.0
+output application/java
+---
+{
+  "_type": "ch.fhnw.digi.demo.JobMessage"
+}]]]></jms:properties>
+    </jms:message>
+</jms:publish>
+			</when>
+			<when expression="payload.jobType == 'Repair'">
+				<jms:publish doc:name="Publish Urgent Order" doc:id="0960782d-08db-4b9c-b313-7cbe8601bc4c" config-ref="JMS_Config" destination="group6.dispo.urgent.orders" >
+						<jms:message >
+							<jms:body ><![CDATA[#[%dw 2.0
+output application/json
+---
+payload]]]></jms:body>
+						</jms:message>
+					</jms:publish>
+			</when>
+			<otherwise>
+				<logger level="ERROR" doc:name="  Log Unknown JobType" doc:id="8377687f-7ca0-4a5b-b499-9a10dd416a0c" message='#["Unknown jobType received - sending to DLQ. jobType was: " ++ (payload.jobType as String default "empty/null")]' />
+				<jms:publish doc:name="Dead Letter Queue" doc:id="23b003ff-68f8-4707-a243-beb023f96981" config-ref="JMS_Config" destination="group6.dispo.dead.letter" >
+						<jms:message >
+							<jms:body ><![CDATA[#[%dw 2.0
+output application/json
+---
+payload]]]></jms:body>
+						</jms:message>
+					</jms:publish>
+			</otherwise>
+		</choice>
+		</foreach>
+	</flow>
+</mule>
